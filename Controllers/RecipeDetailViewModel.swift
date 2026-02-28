@@ -23,6 +23,10 @@ class RecipeDetailViewModel {
     var newIngredientName: String = ""
     var newIngredientQuantity: String = ""
 
+    // Time Optimization
+    var showingOptimizer: Bool = false
+    var optimizedStepIds: Set<Int> = []  // order indices of steps set to high heat
+
     init(recipe: Recipe) {
         self.recipe = recipe
     }
@@ -82,13 +86,20 @@ class RecipeDetailViewModel {
         session.notes = deferredNotes
         session.suggestions = SuggestionEngine.generateSuggestions(from: deferredNotes)
         session.promptedForRating = true
+        session.ratingFinalized = true  // Rated — never ask again
         sessionToRate = nil
         showingDeferredRating = false
     }
 
-    /// User dismissed — mark as prompted so it won't ask again, moves to notifications
+    /// User dismissed deferred prompt
+    /// If already notification-dismissed before → finalize (never ask again)
+    /// Otherwise → mark prompted, send to notification
     func dismissDeferredRating() {
         if let session = sessionToRate {
+            if session.dismissedFromNotification {
+                // Already dismissed from notification before → finalize permanently
+                session.ratingFinalized = true
+            }
             session.promptedForRating = true
         }
         sessionToRate = nil

@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct MainTabView: View {
-    @State private var selectedTab = 0
+    @State private var appNav = AppNavigation()
     @State private var showingAddRecipe = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            TabView(selection: $selectedTab) {
+            TabView(selection: $appNav.selectedTab) {
                 HomeView()
                     .tag(0)
 
@@ -21,12 +21,12 @@ struct MainTabView: View {
             }
 
             HStack(spacing: 0) {
-                TabItem(image: "house.circle.fill", label: "Home", isSelected: selectedTab == 0) {
-                    selectedTab = 0
+                TabItem(image: "house.circle.fill", label: "Home", isSelected: appNav.selectedTab == 0) {
+                    appNav.selectedTab = 0
                 }
 
-                TabItem(image: "chart.bar.doc.horizontal.fill", label: "Activity", isSelected: selectedTab == 1) {
-                    selectedTab = 1
+                TabItem(image: "chart.bar.doc.horizontal.fill", label: "Activity", isSelected: appNav.selectedTab == 1) {
+                    appNav.selectedTab = 1
                 }
 
                 Button(action: { showingAddRecipe = true }) {
@@ -49,8 +49,8 @@ struct MainTabView: View {
                     .frame(maxWidth: .infinity)
                 }
 
-                TabItem(image: "person.crop.circle.fill", label: "Profile", isSelected: selectedTab == 3) {
-                    selectedTab = 3
+                TabItem(image: "person.crop.circle.fill", label: "Profile", isSelected: appNav.selectedTab == 3) {
+                    appNav.selectedTab = 3
                 }
             }
             .padding(.top, 12)
@@ -62,6 +62,7 @@ struct MainTabView: View {
         .sheet(isPresented: $showingAddRecipe) {
             AddRecipeView()
         }
+        .environment(appNav)
     }
 }
 

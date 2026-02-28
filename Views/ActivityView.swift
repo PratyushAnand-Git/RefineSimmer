@@ -61,8 +61,13 @@ struct ActivityView: View {
                                             .foregroundColor(Theme.textSecondary)
                                     }
 
-                                    ForEach(sessions, id: \.1.id) { recipe, session in
-                                        SessionRow(recipe: recipe, session: session)
+                                    ForEach(sessions, id: \.1.persistentModelID) { recipe, session in
+                                        SessionRow(recipe: recipe, session: session) {
+                                            ratingRecipe = recipe
+                                            ratingSession = session
+                                            pendingRating = 0
+                                            pendingNotes = ""
+                                        }
                                     }
                                 }
                                 .padding(.horizontal)
@@ -83,6 +88,7 @@ struct ActivityView: View {
                     session.rating = pendingRating
                     session.notes = pendingNotes
                     session.suggestions = SuggestionEngine.generateSuggestions(from: pendingNotes)
+                    session.ratingFinalized = true  // Rated — never ask again
                     ratingSession = nil
                     ratingRecipe = nil
                 }
@@ -231,10 +237,11 @@ struct InlineRatingView: View {
     }
 }
 
-// MARK: - Session Row
+// MARK: - Session Row (with Rate button for unrated)
 struct SessionRow: View {
     let recipe: Recipe
     let session: CookingSession
+    let onRate: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -270,6 +277,25 @@ struct SessionRow: View {
                         .font(Theme.bodyFont(size: 13))
                         .foregroundColor(Theme.textSecondary)
                         .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Rate button for unrated sessions
+                if session.rating == 0 {
+                    Button(action: onRate) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.circle.fill")
+                                .font(.system(size: 14))
+                            Text("Rate")
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Theme.accent)
+                        .clipShape(Capsule())
+                    }
                 }
             }
         }

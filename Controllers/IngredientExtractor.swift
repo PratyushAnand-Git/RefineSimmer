@@ -65,6 +65,18 @@ struct IngredientExtractor {
         "tomato paste": "Tomato Paste", "coconut milk": "Coconut Milk",
     ]
 
+    /// Public accessor for default quantities — used by RecipeInputFilter when parsing ingredient lines
+    static func getDefaultQuantity(for name: String) -> String {
+        // Try exact match first
+        if let qty = standardDefaults[name] { return qty }
+        // Try matching by known ingredient mapping
+        let lower = name.lowercased()
+        if let displayName = knownIngredients[lower], let qty = standardDefaults[displayName] {
+            return qty
+        }
+        return "As needed"
+    }
+
     // Standard default quantities per ingredient (base for 1 serving/1 pound)
     private static let standardDefaults: [String: String] = [
         // Proteins
@@ -203,26 +215,26 @@ struct IngredientExtractor {
 
         // Mixing / Stirring
         if lower.contains("mix") || lower.contains("stir") || lower.contains("whisk") || lower.contains("blend")
-            || lower.contains("fold") || lower.contains("combine") || lower.contains("beat") || lower.contains("cream")
+            || lower.contains("fold") || lower.contains("combine") || lower.contains("beat")
             || lower.contains("toss") { return .mix }
 
-        // Pouring / Adding
-        if lower.contains("pour") || lower.contains("drizzle") || lower.contains("add") || lower.contains("sprinkle") { return .pour }
+        // Heating / Preheating — must be before Pour/Add
+        if lower.contains("preheat") || lower.contains("heat") || lower.contains("warm") { return .heat }
 
         // Seasoning / Coating
         if lower.contains("season") || lower.contains("coat") || lower.contains("marinate") || lower.contains("rub")
             || lower.contains("brush") || lower.contains("glaze") { return .coat }
 
+        // Serving / Plating — must be before Pour/Add
+        if lower.contains("serve") || lower.contains("plate") || lower.contains("garnish") || lower.contains("top with")
+            || lower.contains("arrange") || lower.contains("transfer") { return .serve }
+
+        // Pouring / Adding (catch-all for "add" — last since many steps say "add")
+        if lower.contains("pour") || lower.contains("drizzle") || lower.contains("add") || lower.contains("sprinkle") { return .pour }
+
         // Resting / Soaking
         if lower.contains("rest") || lower.contains("soak") || lower.contains("cool") || lower.contains("chill")
             || lower.contains("set aside") || lower.contains("let it") || lower.contains("refrigerat") { return .rest }
-
-        // Heating / Preheating
-        if lower.contains("preheat") || lower.contains("heat") || lower.contains("warm") { return .heat }
-
-        // Serving / Plating
-        if lower.contains("serve") || lower.contains("plate") || lower.contains("garnish") || lower.contains("top with")
-            || lower.contains("arrange") || lower.contains("transfer") { return .serve }
 
         // Cooking (generic catch-all that still shows an icon)
         if lower.contains("cook") { return .cook }
@@ -285,21 +297,21 @@ enum CookingAction: String, CaseIterable {
     var icon: String {
         switch self {
         case .boil: return "flame.fill"
-        case .simmer: return "flame"
+        case .simmer: return "humidity.fill"
         case .fry, .stirFry: return "frying.pan.fill"
         case .bake: return "oven.fill"
         case .grill: return "flame.fill"
-        case .steam: return "cloud.fill"
+        case .steam: return "wind"
         case .rest: return "clock.fill"
         case .heat: return "thermometer.sun.fill"
         case .prep: return "knife.fill"
         case .mix: return "arrow.triangle.2.circlepath"
-        case .pour: return "drop.fill"
+        case .pour: return "plus.circle.fill"
         case .flip: return "arrow.up.arrow.down"
         case .coat: return "wand.and.stars"
         case .knead: return "hand.raised.fill"
         case .serve: return "fork.knife"
-        case .cook: return "cooktop.fill"
+        case .cook: return "flame.circle.fill"
         case .general: return "play.circle.fill"
         }
     }
@@ -317,7 +329,7 @@ enum CookingAction: String, CaseIterable {
         case .heat: return "🔥"
         case .prep: return "🔪"
         case .mix: return "🥄"
-        case .pour: return "🫗"
+        case .pour: return "➕"
         case .flip: return "🥞"
         case .coat: return "🧂"
         case .knead: return "🫓"

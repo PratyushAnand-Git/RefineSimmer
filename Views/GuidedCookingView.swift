@@ -3,12 +3,13 @@ import SwiftData
 
 struct GuidedCookingView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(AppNavigation.self) private var appNav: AppNavigation?
     @AppStorage("RS_UserGender") private var userGender: String = "female"
     @State private var viewModel: CookingViewModel
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    init(recipe: Recipe) {
-        _viewModel = State(initialValue: CookingViewModel(recipe: recipe))
+    init(recipe: Recipe, optimizedStepIds: Set<Int> = []) {
+        _viewModel = State(initialValue: CookingViewModel(recipe: recipe, optimizedStepIds: optimizedStepIds))
     }
 
     var body: some View {
@@ -16,7 +17,10 @@ struct GuidedCookingView: View {
             VStack(spacing: 0) {
                 // Header
                 HStack {
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        viewModel.voice.stopSpeaking()
+                        dismiss()
+                    }) {
                         Theme.premiumIcon("xmark.circle.fill", color: Theme.textMain)
                             .font(.system(size: 24))
                     }
@@ -30,6 +34,20 @@ struct GuidedCookingView: View {
                             .foregroundColor(Theme.textMain)
                     }
                     Spacer()
+
+                    // Voice toggle
+                    Button(action: {
+                        viewModel.voice.isEnabled.toggle()
+                        if !viewModel.voice.isEnabled {
+                            viewModel.voice.stopSpeaking()
+                        }
+                    }) {
+                        Image(systemName: viewModel.voice.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(viewModel.voice.isEnabled ? Theme.primary : Theme.textSecondary)
+                    }
+                    .padding(.trailing, 8)
+
                     Button(action: { viewModel.showingStepExplainer = true }) {
                         Theme.premiumIcon("questionmark.circle.fill", color: Theme.textSecondary)
                             .font(.system(size: 24))
@@ -49,130 +67,197 @@ struct GuidedCookingView: View {
                         .animation(.spring(), value: viewModel.progress)
                 }
 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        Spacer(minLength: 16)
-
-                        // Step badge
-                        VStack(spacing: 8) {
-                            HStack(spacing: 8) {
-                                Theme.premiumIcon("list.bullet.indent", color: Theme.primary)
-                                Text("STEP \(viewModel.currentStepIndex + 1) OF \(viewModel.stepCount)")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Theme.primaryLight)
-                            .clipShape(Capsule())
-
-                            // Cooking action badge
-                            HStack(spacing: 6) {
-                                Image(systemName: viewModel.currentAction.icon)
-                                    .font(.system(size: 12))
-                                Text(viewModel.currentAction.label)
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundColor(Theme.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Theme.accent.opacity(0.12))
-                            .clipShape(Capsule())
-                        }
-
-                        // Animated avatar
-                        CookingAvatarView(
-                            action: viewModel.currentAction,
-                            stepInstruction: viewModel.currentStep.instruction,
-                            isMale: userGender == "male"
-                        )
-                        .frame(height: 160)
-                        .id(viewModel.currentStepIndex)
-
-                        // Step instruction
-                        Text(viewModel.currentStep.instruction)
-                            .font(Theme.titleFont(size: 24))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .minimumScaleFactor(0.6)
-
-                        // Timer section
-                        if viewModel.effectiveDuration != nil {
-                            VStack(spacing: 14) {
-                                HStack(spacing: 12) {
-                                    Theme.premiumIcon("timer.circle.fill", color: viewModel.isTimerRunning ? Theme.accent : Theme.textSecondary)
-                                        .font(.system(size: 40))
-
-                                    Text(viewModel.timeString)
-                                        .font(.system(size: 48, weight: .bold, design: .monospaced))
-                                        .foregroundColor(Theme.textMain)
-                                }
-
-                                HStack(spacing: 12) {
-                                    Button(action: { viewModel.toggleTimer() }) {
-                                        HStack {
-                                            Image(systemName: viewModel.isTimerRunning ? "pause.fill" : "play.fill")
-                                            Text(viewModel.isTimerRunning ? "Pause" : "Start")
-                                        }
-                                        .font(Theme.bodyFont(size: 15).weight(.bold))
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 11)
-                                        .background(viewModel.isTimerRunning ? Theme.primary : Theme.accent)
-                                        .foregroundColor(.white)
-                                        .clipShape(Capsule())
-                                    }
-
-                                    Button(action: { viewModel.addOneMinute() }) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "plus")
-                                                .font(.system(size: 12, weight: .bold))
-                                            Text("1 min")
-                                                .font(Theme.bodyFont(size: 14).weight(.bold))
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 11)
-                                        .background(Theme.primaryLight)
-                                        .foregroundColor(Theme.primary)
-                                        .clipShape(Capsule())
-                                    }
-                                }
-                            }
-                            .padding(24)
-                            .background(Theme.background)
-                            .cornerRadius(24)
-                            .shadow(color: Color.black.opacity(0.05), radius: 10, y: 5)
-                            .padding(.horizontal, 16)
-                        }
-
-                        Spacer(minLength: 100)
-                    }
-                }
-
-                // Navigation buttons
+                // Main content — fills available space, NO scrolling
                 VStack(spacing: 0) {
-                    HStack(spacing: 20) {
-                        if viewModel.currentStepIndex > 0 {
-                            Button(action: { viewModel.previousStep() }) {
-                                Theme.premiumIcon("arrow.left.circle.fill", color: Theme.primary)
-                                    .font(.system(size: 60))
-                                    .background(Circle().fill(.white))
+                    Spacer(minLength: 4)
+
+                    // Step badge + action badge
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Theme.premiumIcon("list.bullet.indent", color: Theme.primary)
+                                .font(.system(size: 12))
+                            Text("STEP \(viewModel.currentStepIndex + 1) OF \(viewModel.stepCount)")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Theme.primaryLight)
+                        .clipShape(Capsule())
+
+                        HStack(spacing: 5) {
+                            Image(systemName: viewModel.currentAction.icon)
+                                .font(.system(size: 11))
+                            Text(viewModel.currentAction.label)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(Theme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Theme.accent.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+
+                    Spacer(minLength: 4)
+
+                    // Avatar
+                    CookingAvatarView(
+                        action: viewModel.currentAction,
+                        stepInstruction: viewModel.currentStep.instruction,
+                        isMale: userGender == "male"
+                    )
+                    .frame(height: 90)
+                    .id(viewModel.currentStepIndex)
+
+                    Spacer(minLength: 4)
+
+                    // Instruction text
+                    Text(viewModel.currentStep.instruction)
+                        .font(Theme.titleFont(size: 18))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(3)
+
+                    Spacer(minLength: 6)
+
+                    // Timer section
+                    if viewModel.effectiveDuration != nil {
+                        VStack(spacing: 8) {
+                            if viewModel.canOptimizeCurrentStep {
+                                HStack(spacing: 6) {
+                                    Image(systemName: viewModel.currentHeatLevel.icon)
+                                        .font(.system(size: 12))
+                                    Text(viewModel.currentHeatLevel.label)
+                                        .font(.system(size: 12, weight: .bold))
+                                }
+                                .foregroundColor(Color(hex: viewModel.currentHeatLevel.color))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(Color(hex: viewModel.currentHeatLevel.color).opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+
+                            HStack(spacing: 8) {
+                                Theme.premiumIcon("timer.circle.fill", color: viewModel.isTimerRunning ? Theme.accent : Theme.textSecondary)
+                                    .font(.system(size: 26))
+                                Text(viewModel.timeString)
+                                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                    .foregroundColor(Theme.textMain)
+                            }
+
+                            HStack(spacing: 10) {
+                                Button(action: { viewModel.toggleTimer() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: viewModel.isTimerRunning ? "pause.fill" : "play.fill")
+                                            .font(.system(size: 12))
+                                        Text(viewModel.isTimerRunning ? "Pause" : "Start")
+                                            .font(.system(size: 13, weight: .bold))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 9)
+                                    .background(viewModel.isTimerRunning ? Theme.primary : Theme.accent)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                                }
+
+                                Button(action: { viewModel.addOneMinute() }) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text("1 min")
+                                            .font(.system(size: 13, weight: .bold))
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 9)
+                                    .background(Theme.primaryLight)
+                                    .foregroundColor(Theme.primary)
+                                    .clipShape(Capsule())
+                                }
+
+                                if viewModel.canOptimizeCurrentStep {
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            viewModel.showingHeatOptions.toggle()
+                                        }
+                                    }) {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "bolt.fill")
+                                                .font(.system(size: 10, weight: .bold))
+                                            Text("Heat")
+                                                .font(.system(size: 13, weight: .bold))
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 9)
+                                        .background(viewModel.showingHeatOptions ? Theme.accent : Color(hex: "FEE2E2"))
+                                        .foregroundColor(viewModel.showingHeatOptions ? .white : Color(hex: "EF4444"))
+                                        .clipShape(Capsule())
+                                    }
+                                }
+                            }
+
+                            if viewModel.showingHeatOptions {
+                                heatOptionsPanel
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+
+                            if viewModel.isAutoAdvancing {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "forward.fill")
+                                        .font(.system(size: 12))
+                                    Text("Next step in \(viewModel.autoAdvanceCountdown)s")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Spacer()
+                                    Button(action: { viewModel.cancelAutoAdvance() }) {
+                                        Text("Cancel")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(Theme.accent)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(Color.white)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Theme.accent.opacity(0.9))
+                                .cornerRadius(10)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                             }
                         }
-
-                        PrimaryButton(title: viewModel.isLastStep ? "Finish Cooking" : "Next Step") {
-                            viewModel.nextStep()
-                        }
-                        .frame(height: 70)
+                        .padding(16)
+                        .background(Theme.background)
+                        .cornerRadius(20)
+                        .shadow(color: Color.black.opacity(0.05), radius: 8, y: 4)
+                        .padding(.horizontal, 16)
+                        .animation(.easeInOut(duration: 0.2), value: viewModel.showingHeatOptions)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
 
-                    // Next step preview line
-                    nextStepPreviewLine
+                    Spacer(minLength: 6)
+
+                    // Navigation buttons
+                    VStack(spacing: 6) {
+                        HStack(spacing: 16) {
+                            if viewModel.currentStepIndex > 0 {
+                                Button(action: { viewModel.previousStep() }) {
+                                    Theme.premiumIcon("arrow.left.circle.fill", color: Theme.primary)
+                                        .font(.system(size: 44))
+                                        .background(Circle().fill(.white))
+                                }
+                            }
+
+                            PrimaryButton(title: viewModel.isLastStep ? "Finish Cooking" : "Next Step") {
+                                viewModel.nextStep()
+                            }
+                            .frame(height: 54)
+                        }
                         .padding(.horizontal, 24)
-                        .padding(.top, 10)
-                        .padding(.bottom, 34)
+
+                        nextStepPreviewLine
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 20)
+                    }
+                    .background(Color.white.shadow(color: .black.opacity(0.03), radius: 5, y: -3))
                 }
-                .background(Color.white.shadow(color: .black.opacity(0.03), radius: 5, y: -3))
             }
         }
         .background(Color.white)
@@ -185,6 +270,12 @@ struct GuidedCookingView: View {
         .sheet(isPresented: $viewModel.showingStepExplainer) {
             StepExplainerSheet(viewModel: viewModel)
         }
+        .onChange(of: appNav?.shouldDismissCookingFlow) { _, newValue in
+            if newValue == true {
+                dismiss()
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: viewModel.isAutoAdvancing)
     }
 
     // MARK: - Next Step Preview
@@ -236,6 +327,68 @@ struct GuidedCookingView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Heat Options Panel
+    private var heatOptionsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.accent)
+                Text("SWITCH HEAT LEVEL")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(Theme.textSecondary)
+            }
+
+            ForEach(viewModel.heatOptions) { option in
+                let isSelected = option.heatLevel == viewModel.currentHeatLevel
+                let levelColor = Color(hex: option.heatLevel.color)
+
+                Button(action: { viewModel.switchHeat(to: option.heatLevel) }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: option.heatLevel.icon)
+                            .font(.system(size: 16))
+                            .foregroundColor(levelColor)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.heatLevel.label)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(isSelected ? levelColor : Theme.textMain)
+
+                            if let warning = option.warning {
+                                Text(warning)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color(hex: "EF4444"))
+                            }
+                        }
+
+                        Spacer()
+
+                        Text(HeatOptimizer.formatTime(option.durationSeconds))
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundColor(isSelected ? levelColor : Theme.textMain)
+
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(levelColor)
+                                .font(.system(size: 16))
+                        }
+                    }
+                    .padding(12)
+                    .background(isSelected ? levelColor.opacity(0.1) : Color.white)
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isSelected ? levelColor : Color.clear, lineWidth: 1.5)
+                    )
+                }
+                .disabled(!option.isSafe)
+                .opacity(option.isSafe ? 1 : 0.5)
+            }
+        }
+        .padding(.top, 6)
     }
 }
 

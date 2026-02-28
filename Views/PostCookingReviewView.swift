@@ -5,6 +5,7 @@ struct PostCookingReviewView: View {
     let recipe: Recipe
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppNavigation.self) private var appNav: AppNavigation?
 
     @State private var rating: Int = 0
     @State private var notes: String = ""
@@ -29,6 +30,8 @@ struct PostCookingReviewView: View {
                             .padding(.horizontal)
 
                         PrimaryButton(title: "Back to Home") {
+                            // Dismiss cooking flow and go to Home tab
+                            appNav?.returnToHome()
                             dismiss()
                         }
                         .padding(.top, 20)
@@ -40,10 +43,12 @@ struct PostCookingReviewView: View {
                         HStack {
                             Spacer()
                             Button(action: {
-                                // Save skipped session with rating 0
-                                let session = CookingSession(rating: 0)
+                                // Save skipped session — will appear in notifications
+                                let session = CookingSession(rating: 0, promptedForRating: true)
                                 recipe.sessions.append(session)
                                 try? modelContext.save()
+                                // Go back to Home
+                                appNav?.returnToHome()
                                 dismiss()
                             }) {
                                 Image(systemName: "xmark.circle.fill")
@@ -105,7 +110,13 @@ struct PostCookingReviewView: View {
 
                         PrimaryButton(title: "Save & Finish") {
                             let suggestions = SuggestionEngine.generateSuggestions(from: notes)
-                            let session = CookingSession(rating: rating, notes: notes, suggestions: suggestions)
+                            let session = CookingSession(
+                                rating: rating,
+                                notes: notes,
+                                suggestions: suggestions,
+                                promptedForRating: true,
+                                ratingFinalized: true
+                            )
                             recipe.sessions.append(session)
                             try? modelContext.save()
                             withAnimation {

@@ -36,14 +36,25 @@ class CookingSession {
     var notes: String
     var suggestions: [String]
     var promptedForRating: Bool
+    var dismissedFromNotification: Bool
+    /// Once true, this session will NEVER appear for rating again (rated or permanently dismissed)
+    var ratingFinalized: Bool
 
-    init(date: Date = Date(), rating: Int = 0, notes: String = "", suggestions: [String] = [], promptedForRating: Bool = false) {
+    init(date: Date = Date(), rating: Int = 0, notes: String = "", suggestions: [String] = [], promptedForRating: Bool = false, dismissedFromNotification: Bool = false, ratingFinalized: Bool = false) {
         self.date = date
         self.rating = rating
         self.notes = notes
         self.suggestions = suggestions
         self.promptedForRating = promptedForRating
+        self.dismissedFromNotification = dismissedFromNotification
+        self.ratingFinalized = ratingFinalized
     }
+
+    /// Whether this session has been rated (rating > 0)
+    var isRated: Bool { rating > 0 }
+
+    /// Whether this session still needs a rating (not finalized, not rated)
+    var needsRating: Bool { !isRated && !ratingFinalized }
 }
 
 @Model
@@ -78,14 +89,20 @@ class Recipe {
         steps.sorted { $0.order < $1.order }
     }
 
-    /// Session that needs a first-time rating prompt (never prompted before)
+    /// First session that was never prompted and still needs rating
+    /// Used for the one-time deferred prompt when opening recipe detail
     var unpromptedSession: CookingSession? {
-        sessions.first(where: { $0.rating == 0 && !$0.promptedForRating })
+        sessions.first(where: { $0.needsRating && !$0.promptedForRating })
     }
 
-    /// Sessions where user dismissed the rating prompt — for notification list
+    /// Unrated sessions shown in Activity "PENDING RATINGS" section
     var dismissedUnratedSessions: [CookingSession] {
-        sessions.filter { $0.rating == 0 && $0.promptedForRating }
+        sessions.filter { $0.needsRating && $0.promptedForRating }
+    }
+
+    /// Sessions visible in the bell notification (prompted, not dismissed from bell, still needs rating)
+    var bellNotificationSessions: [CookingSession] {
+        sessions.filter { $0.needsRating && $0.promptedForRating && !$0.dismissedFromNotification }
     }
 
     static var sample: Recipe {

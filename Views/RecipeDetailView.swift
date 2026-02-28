@@ -3,6 +3,8 @@ import SwiftData
 
 struct RecipeDetailView: View {
     @State private var viewModel: RecipeDetailViewModel
+    @Environment(\.dismiss) var dismiss
+    @Environment(AppNavigation.self) private var appNav: AppNavigation?
 
     init(recipe: Recipe) {
         _viewModel = State(initialValue: RecipeDetailViewModel(recipe: recipe))
@@ -48,6 +50,8 @@ struct RecipeDetailView: View {
                         suggestionsSection
                     }
 
+                    timeEstimateSection
+
                     ingredientsSection
 
                     stepsSection
@@ -71,10 +75,15 @@ struct RecipeDetailView: View {
             viewModel.checkForUnratedSession()
         }
         .fullScreenCover(isPresented: $viewModel.showingCookingFlow) {
-            GuidedCookingView(recipe: viewModel.recipe)
+            GuidedCookingView(recipe: viewModel.recipe, optimizedStepIds: viewModel.optimizedStepIds)
         }
         .sheet(isPresented: $viewModel.showingDeferredRating) {
             DeferredRatingView(viewModel: viewModel)
+        }
+        .onChange(of: appNav?.shouldDismissCookingFlow) { _, newValue in
+            if newValue == true {
+                dismiss()  // Pop back to Home root
+            }
         }
     }
 
@@ -177,6 +186,154 @@ struct RecipeDetailView: View {
         .background(Theme.accent.opacity(0.1))
         .cornerRadius(16)
         .padding(.horizontal)
+    }
+
+    // MARK: - Time Estimate
+    private var timeEstimateSection: some View {
+        let totalTime = HeatOptimizer.estimateTotalTime(steps: viewModel.recipe.sortedSteps)
+        let optimizableSteps = HeatOptimizer.optimizableSteps(from: viewModel.recipe.sortedSteps)
+        let timeSaved = optimizableSteps.reduce(0) { total, item in
+            viewModel.optimizedStepIds.contains(item.step.order)
+                ? total + (item.originalDuration - item.optimizedDuration)
+                : total
+        }
+        let displayTime = totalTime - timeSaved
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Theme.premiumIcon("clock.fill", color: Theme.primary)
+                Text("ESTIMATED TIME")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Theme.textSecondary)
+                Spacer()
+
+                Text(HeatOptimizer.formatTime(displayTime))
+                    .font(Theme.titleFont(size: 18))
+                    .foregroundColor(Theme.textMain)
+            }
+
+            if timeSaved > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 11))
+                    Text("Saving \(HeatOptimizer.formatTime(timeSaved))")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundColor(Theme.success)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Theme.success.opacity(0.12))
+                .clipShape(Capsule())
+            }
+
+            // Optimize button
+            if !optimizableSteps.isEmpty {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.showingOptimizer.toggle()
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.circle.fill")
+                            .font(.system(size: 18))
+                        Text("Optimize Cooking Time")
+                            .font(.system(size: 14, weight: .bold))
+                        Spacer()
+                        Image(systemName: viewModel.showingOptimizer ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(14)
+                    .background(
+                        LinearGradient(colors: [Color(hex: "EF4444"), Theme.accent], startPoint: .leading, endPoint: .trailing)
+                    )
+                    .cornerRadius(14)
+                }
+
+                // Optimizable steps list
+                if viewModel.showingOptimizer {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Select steps to speed up with higher heat:")
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textSecondary)
+
+                        ForEach(optimizableSteps, id: \.step.order) { item in
+                            let isOptimized = viewModel.optimizedStepIds.contains(item.step.order)
+                            let saving = item.originalDuration - item.optimizedDuration
+
+                            Button(action: {
+                                if isOptimized {
+                                    viewModel.optimizedStepIds.remove(item.step.order)
+                                } else {
+                                    viewModel.optimizedStepIds.insert(item.step.order)
+                                }
+                            }) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: isOptimized ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(isOptimized ? Theme.success : Theme.textSecondary.opacity(0.4))
+                                        .font(.system(size: 20))
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(item.step.instruction)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundColor(Theme.textMain)
+                                            .lineLimit(2)
+
+                                        HStack(spacing: 8) {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "flame")
+                                                    .font(.system(size: 9))
+                                                Text(item.action.label)
+                                                    .font(.system(size: 10, weight: .medium))
+                                            }
+                                            .foregroundColor(Theme.accent)
+
+                                            if isOptimized {
+                                                HStack(spacing: 3) {
+                                                    Text(HeatOptimizer.formatTime(item.originalDuration))
+                                                        .strikethrough()
+                                                    Text("→ \(HeatOptimizer.formatTime(item.optimizedDuration))")
+                                                }
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(Theme.success)
+                                            } else {
+                                                Text(HeatOptimizer.formatTime(item.originalDuration))
+                                                    .font(.system(size: 10, weight: .medium))
+                                                    .foregroundColor(Theme.textSecondary)
+                                            }
+
+                                            if saving > 0 {
+                                                Text("-\(HeatOptimizer.formatTime(saving))")
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundColor(Color(hex: "EF4444"))
+                                            }
+                                        }
+                                    }
+
+                                    Spacer()
+                                }
+                                .padding(12)
+                                .background(isOptimized ? Theme.success.opacity(0.06) : Color.white)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(isOptimized ? Theme.success.opacity(0.3) : Theme.primaryLight.opacity(0.5), lineWidth: 1)
+                                )
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.04), radius: 8, y: 4)
+        .padding(.horizontal)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.showingOptimizer)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.optimizedStepIds)
     }
 
     // MARK: - Ingredients
